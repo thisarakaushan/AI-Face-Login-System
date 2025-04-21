@@ -4,14 +4,13 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import FaceCapture from './FaceCapture';
+import LiveFaceRecognition from '@/components/LiveFaceRecognition';
 
 export default function LoginForm() {
     const router = useRouter();
     const [loginMethod, setLoginMethod] = useState('password'); // 'password' or 'face'
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
-    const [faceImage, setFaceImage] = useState(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
@@ -33,10 +32,6 @@ export default function LoginForm() {
                 throw new Error('Password is required');
             }
 
-            if (loginMethod === 'face' && !faceImage) {
-                throw new Error('Face capture is required');
-            }
-
             // Prepare login data
             const loginData = {
                 method: loginMethod,
@@ -45,8 +40,6 @@ export default function LoginForm() {
 
             if (loginMethod === 'password') {
                 loginData.password = password;
-            } else {
-                loginData.faceImage = faceImage;
             }
 
             // Send login request
@@ -81,9 +74,39 @@ export default function LoginForm() {
         }
     };
 
-    // Handle face capture
-    const handleFaceCapture = (imageData) => {
-        setFaceImage(imageData);
+    const handleFaceLoginSuccess = async (data) => {
+        try {
+            const response = await fetch('http://localhost:5000/api/auth/login', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    method: 'face',
+                    email: email
+                })
+            });
+
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(result.message || 'Login failed');
+            }
+
+            // Save token and redirect
+            localStorage.setItem('authToken', result.token);
+            setSuccess('Login successful! Redirecting...');
+            setTimeout(() => {
+                router.push('/dashboard');
+            }, 1500);
+
+        } catch (err) {
+            setError(err.message);
+        }
+    };
+
+    const handleFaceLoginFailure = (error) => {
+        setError(error.message || 'Face verification failed');
     };
 
     return (
@@ -187,7 +210,12 @@ export default function LoginForm() {
                 {/* Face recognition method */}
                 {loginMethod === 'face' && (
                     <div className="flex justify-center">
-                        <FaceCapture onCapture={handleFaceCapture} buttonText="Capture Face for Login" />
+                        <LiveFaceRecognition
+                            email={email}
+                            mode="login"
+                            onSuccess={handleFaceLoginSuccess}
+                            onFailure={handleFaceLoginFailure}
+                        />
                     </div>
                 )}
 

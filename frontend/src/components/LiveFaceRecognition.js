@@ -95,45 +95,29 @@ export default function LiveFaceRecognition({
         try {
             setIsProcessing(true);
             
-            const endpoint = mode === 'reset-password' 
-                ? '/face/reset-password' 
-                : '/face/verify-live';
-            
-            const requestBody = {
-                email: email,
-                faceImage: imageDataUrl
-            };
-            
-            if (mode === 'reset-password') {
-                requestBody.newPassword = newPassword;
-            }
-            
-            const response = await fetch(`http://localhost:5000/api${endpoint}`, {
+            // First verify the face
+            const verifyResponse = await fetch('http://localhost:5000/api/face/verify', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify(requestBody)
+                body: JSON.stringify({
+                    email: email,
+                    faceImage: imageDataUrl
+                })
             });
 
-            const data = await response.json();
+            const verifyData = await verifyResponse.json();
             
-            if (response.ok && data.success) {
+            if (verifyData.success && verifyData.match) {
                 setRecognitionStatus('success');
-                
-                if (mode === 'reset-password') {
-                    setStatusMessage('Password reset successful!');
-                    if (onPasswordReset) onPasswordReset(data);
-                } else {
-                    setStatusMessage('Face recognized! Logging in...');
-                    if (onSuccess) onSuccess(data);
-                }
-                
+                setStatusMessage('Face recognized! Logging in...');
+                if (onSuccess) onSuccess(verifyData);
                 stopCamera();
             } else {
                 setRecognitionStatus('failure');
-                setStatusMessage(data.message || 'Verification failed');
-                if (onFailure) onFailure(data);
+                setStatusMessage(verifyData.message || 'Face verification failed');
+                if (onFailure) onFailure({ message: 'Face verification failed' });
                 
                 setTimeout(() => {
                     setRecognitionStatus(null);
@@ -153,11 +137,11 @@ export default function LiveFaceRecognition({
         } finally {
             setIsProcessing(false);
         }
-    }, [email, onSuccess, onFailure, stopCamera, mode, newPassword, onPasswordReset]);
+    }, [email, onSuccess, onFailure, stopCamera]);
 
     // Process video frame for face detection
     const processVideoFrame = useCallback(() => {
-        if (!isActive || isProcessing) {
+        if (!isActive || isProcessing || !email) {
             requestAnimationFrameRef.current = requestAnimationFrame(processVideoFrame);
             return;
         }
@@ -165,71 +149,60 @@ export default function LiveFaceRecognition({
         const imageDataUrl = extractFrame();
         
         if (imageDataUrl) {
-            const img = new Image();
-            img.onload = async () => {
-                try {
-                    // First check if any face is detected
-                    const detectResponse = await fetch('http://localhost:5000/api/face/verify-live', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            email: email,
-                            faceImage: imageDataUrl
-                        })
-                    });
+            fetch('http://localhost:5000/api/face/verify', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    email: email,
+                    faceImage: imageDataUrl
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    const ctx = canvasRef.current.getContext('2d');
+                    ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
                     
-                    const detectData = await detectResponse.json();
-                    
-                    if (detectData.success) {
+                    if (data.match) {
                         setFaceDetected(true);
+                        // Draw green rectangle for matched face
+                        ctx.strokeStyle = '#00FF00';
+                        ctx.lineWidth = 3;
+                        ctx.strokeRect(50, 50, canvasRef.current.width - 100, canvasRef.current.height - 100);
                         
-                        // Draw rectangle around the face
-                        const ctx = canvasRef.current.getContext('2d');
-                        ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+                        // Add recognition text
+                        ctx.fillStyle = '#00FF00';
+                        ctx.font = 'bold 24px Arial';
+                        ctx.fillText('Face Recognized!', 60, 40);
                         
-                        if (detectData.match) {
-                            // Green rectangle for matched face
-                            ctx.strokeStyle = '#00FF00';
-                            ctx.lineWidth = 3;
-                            ctx.strokeRect(50, 50, canvasRef.current.width - 100, canvasRef.current.height - 100);
-                            
-                            // Add text label
-                            ctx.fillStyle = '#00FF00';
-                            ctx.font = 'bold 16px Arial';
-                            ctx.fillText('Verified', 60, 80);
-                            
-                            // Automatically verify after short delay
-                            setTimeout(() => verifyFace(imageDataUrl), 1000);
-                        } else {
-                            // Red rectangle for unknown face
-                            ctx.strokeStyle = '#FF0000';
-                            ctx.lineWidth = 3;
-                            ctx.strokeRect(50, 50, canvasRef.current.width - 100, canvasRef.current.height - 100);
-                            
-                            // Add text label
-                            ctx.fillStyle = '#FF0000';
-                            ctx.font = 'bold 16px Arial';
-                            ctx.fillText('Unknown', 60, 80);
-                        }
+                        // Trigger automatic login after short delay
+                        setTimeout(() => {
+                            setStatusMessage('Face recognized! Logging in...');
+                            setRecognitionStatus('success');
+                            onSuccess(data);
+                            stopCamera();
+                        }, 1000);
                     } else {
                         setFaceDetected(false);
-                        // Clear canvas if no face detected
-                        const ctx = canvasRef.current.getContext('2d');
-                        ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+                        // Draw red rectangle for unmatched face
+                        ctx.strokeStyle = '#FF0000';
+                        ctx.lineWidth = 3;
+                        ctx.strokeRect(50, 50, canvasRef.current.width - 100, canvasRef.current.height - 100);
+                        ctx.fillStyle = '#FF0000';
+                        ctx.font = 'bold 24px Arial';
+                        ctx.fillText('Face Not Recognized', 60, 40);
                     }
-                } catch (err) {
-                    console.error('Error during face detection:', err);
                 }
-                
-                requestAnimationFrameRef.current = requestAnimationFrame(processVideoFrame);
-            };
-            img.src = imageDataUrl;
-        } else {
-            requestAnimationFrameRef.current = requestAnimationFrame(processVideoFrame);
+            })
+            .catch(err => {
+                console.error('Error during face detection:', err);
+            });
         }
-    }, [isActive, isProcessing, extractFrame, email, verifyFace]);
+        
+        requestAnimationFrameRef.current = requestAnimationFrame(processVideoFrame);
+    }, [isActive, isProcessing, email, extractFrame, onSuccess, stopCamera]);
 
     // Start face recognition
     const startFaceRecognition = useCallback(() => {

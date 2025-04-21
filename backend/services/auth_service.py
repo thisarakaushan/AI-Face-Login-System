@@ -116,6 +116,45 @@ class AuthService:
         
         return {'success': True, 'message': 'Password reset successful'}
     
+    def verify_reset_code(self, email, code):
+        user_data = self.db.users.find_one({
+            'email': email,
+            'reset_code': code,
+            'reset_code_exp': {'$gt': datetime.datetime.utcnow()}
+        })
+        
+        if not user_data:
+            return {'success': False, 'message': 'Invalid or expired code'}
+        
+        return {'success': True, 'message': 'Code verified successfully'}
+    
+    def reset_password_with_code(self, email, code, new_password):
+        user_data = self.db.users.find_one({
+            'email': email,
+            'reset_code': code,
+            'reset_code_exp': {'$gt': datetime.datetime.utcnow()}
+        })
+        
+        if not user_data:
+            return {'success': False, 'message': 'Invalid or expired code'}
+        
+        # Update password and clear reset code
+        password_hash = generate_password_hash(new_password)
+        self.db.users.update_one(
+            {'_id': user_data['_id']},
+            {
+                '$set': {'password_hash': password_hash},
+                '$unset': {
+                    'reset_code': '',
+                    'reset_code_exp': '',
+                    'reset_token': '',
+                    'reset_token_exp': ''
+                }
+            }
+        )
+        
+        return {'success': True, 'message': 'Password reset successful'}
+    
     def _generate_token(self, user_id, email):
         payload = {
             'exp': datetime.datetime.utcnow() + current_app.config['JWT_ACCESS_TOKEN_EXPIRES'],

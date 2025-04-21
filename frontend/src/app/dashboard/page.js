@@ -49,18 +49,46 @@ export default function UserDashboard() {
     }, []);
 
     // Handle logout
-    const handleLogout = () => {
-        // Clear auth token from localStorage
-        localStorage.removeItem('authToken');
-        // Redirect to login page
-        window.location.href = '/login';
+    const handleLogout = async () => {
+        try {
+            const token = localStorage.getItem('authToken');
+            // Call logout API if needed
+            await fetch('http://localhost:5000/api/user/logout', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+        } catch (error) {
+            console.error('Logout error:', error);
+        } finally {
+            // Clear auth token and redirect
+            localStorage.removeItem('authToken');
+            window.location.href = '/login';
+        }
     };
 
     // Handle face verification success
-    const handleFaceVerificationSuccess = (data) => {
-        // Update state to show password
-        setShowPassword(true);
-        // Hide face verification component
+    const handleFaceVerificationSuccess = async (data) => {
+        try {
+            const token = localStorage.getItem('authToken');
+            const response = await fetch('http://localhost:5000/api/user/password', {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                setUser(prev => ({...prev, password: data.password}));
+                setShowPassword(true);
+            }
+        } catch (error) {
+            setError('Failed to fetch password');
+        }
         setFaceVerificationActive(false);
     };
 

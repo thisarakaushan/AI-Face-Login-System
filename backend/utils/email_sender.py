@@ -1,38 +1,35 @@
 # Email sender for password reset
-from flask import current_app
 from flask_mail import Mail, Message
 
-def send_password_reset_email(recipient, reset_url):
+def send_password_reset_email(to_email, reset_url, app):
     """
     Send password reset email to user
     """
     # Initialize Flask-Mail
-    mail = Mail(current_app)
+    mail = Mail(app)
     
     # Create email message
-    subject = "Password Reset Request"
-    body = f"""
-    Hello,
-    
-    You recently requested to reset your password. Click the link below to reset it:
-    
-    {reset_url}
-    
-    This link will expire in 24 hours. If you did not request a password reset, please ignore this email.
-    
-    Regards,
-    The Face Auth Team
-    """
-    
     msg = Message(
-        subject=subject,
-        recipients=[recipient],
-        body=body
+        'Password Reset Request',
+        sender=app.config['MAIL_DEFAULT_SENDER'],
+        recipients=[to_email]
     )
+    
+    msg.body = f'''To reset your password, visit the following link:
+{reset_url}
+
+If you did not make this request then simply ignore this email and no changes will be made.
+'''
+    
+    msg.html = f'''
+<p>To reset your password, click the following link:</p>
+<p><a href="{reset_url}">Reset Password</a></p>
+<p>If you did not make this request then simply ignore this email and no changes will be made.</p>
+'''
     
     try:
         mail.send(msg)
         return True
     except Exception as e:
-        current_app.logger.error(f"Failed to send email: {str(e)}")
+        app.logger.error(f"Failed to send email: {str(e)}")
         return False

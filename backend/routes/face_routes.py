@@ -1,5 +1,7 @@
 # Face recognition routes
+import face_recognition
 from flask import Blueprint, request, jsonify, current_app
+import numpy as np
 from services.face_service import FaceService
 from flask_pymongo import PyMongo
 import jwt
@@ -97,28 +99,36 @@ def verify_face():
     mongo = PyMongo(current_app)
     face_service = FaceService(mongo.db)
     
-    # Extract face encoding
+    # Extract face encoding from the captured image
     result = face_service.extract_face_encoding(face_image)
     if not result['success']:
         return jsonify(result), 400
     
     face_encoding = result['face_encoding']
     
-    # Find user
+    # Find user and get stored face encoding
     user_data = mongo.db.users.find_one({'email': email})
     if not user_data or 'face_encoding' not in user_data:
         return jsonify({'success': False, 'message': 'User not found or face not registered'}), 404
     
-    # Compare faces
-    import face_recognition
-    import numpy as np
-    
-    stored_encoding = np.array(user_data['face_encoding'])
-    tolerance = current_app.config['FACE_RECOGNITION_TOLERANCE']
-    
-    match = face_recognition.compare_faces([stored_encoding], face_encoding, tolerance=tolerance)[0]
-    
-    return jsonify({
-        'success': True,
-        'match': bool(match)
-    })
+    try:
+        # Compare faces with lower tolerance for better accuracy
+        stored_encoding = np.array(user_data['face_encoding'])
+        tolerance = 0.5  # Adjust this value as needed (lower = stricter)
+        
+        # Calculate face distance and match
+        matches = face_recognition.compare_faces([stored_encoding], face_encoding, tolerance=tolerance)
+        face_distance = face_recognition.face_distance([stored_encoding], face_encoding)[0]
+        
+        is_match = matches[0] and face_distance < tolerance
+        
+        return jsonify({
+            'success': True,
+            'match': bool(is_match),
+            'distance': float(face_distance),
+            'message': 'Face recognized successfully!' if is_match else 'Face not recognized',
+            'confidence': float(1 - face_distance)
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Error comparing faces: {str(e)}'}), 500

@@ -94,6 +94,7 @@ def login():
 def forgot_password():
     data = request.get_json()
     email = data.get('email')
+    reset_method = data.get('method', 'email')  # 'email' or 'face'
     
     if not validate_email(email):
         return jsonify({'success': False, 'message': 'Invalid email format'}), 400
@@ -102,39 +103,68 @@ def forgot_password():
     mongo = PyMongo(current_app)
     auth_service = AuthService(mongo.db)
     
+    if reset_method == 'face':
+        face_image = data.get('faceImage')
+        if not face_image:
+            return jsonify({'success': False, 'message': 'Face image is required'}), 400
+            
+        # Verify face before allowing password reset
+        face_service = FaceService(mongo.db)
+        verification = face_service.verify_face(email, face_image)
+        if not verification['success'] or not verification['match']:
+            return jsonify({'success': False, 'message': 'Face verification failed'}), 401
+    
     # Generate reset token
     result = auth_service.generate_password_reset_token(email)
     
-    # Send email with reset link
     if result.get('token'):
-        reset_url = f"{request.origin}/reset-password?token={result['token']}&email={email}"
-        send_password_reset_email(email, reset_url)
+        try:
+            reset_url = f"{request.host_url.rstrip('/')}/reset-password?token={result['token']}&email={email}"
+            send_password_reset_email(
+                to_email=email,
+                reset_url=reset_url,
+                app=current_app._get_current_object()
+            )
+            return jsonify({'success': True, 'message': 'Password reset link sent to your email'})
+        except Exception as e:
+            print(f"Email sending error: {str(e)}")  # For debugging
+            return jsonify({'success': False, 'message': 'Failed to send reset email'}), 500
     
-    # Always return success to prevent email enumeration
-    return jsonify({'success': True, 'message': 'If your email is registered, you will receive a password reset link'})
+    return jsonify({'success': False, 'message': 'User not found'}), 404
+
+@auth_bp.route('/verify-reset-code', methods=['POST'])
+def verify_reset_code():
+    data = request.get_json()
+    email = data.get('email')
+    code = data.get('code')
+    
+    if not email or not code:
+        return jsonify({'success': False, 'message': 'Email and code are required'}), 400
+    
+    # Initialize services
+    mongo = PyMongo(current_app)
+    auth_service = AuthService(mongo.db)
+    
+    # Verify code
+    result = auth_service.verify_reset_code(email, code)
+    return jsonify(result)
 
 @auth_bp.route('/reset-password', methods=['POST'])
 def reset_password():
     data = request.get_json()
-    token = data.get('token')
-    new_password = data.get('password')
+    email = data.get('email')
+    code = data.get('code')
+    new_password = data.get('newPassword')
     
-    if not token or not new_password:
-        return jsonify({'success': False, 'message': 'Token and new password are required'}), 400
-    
-    if not validate_password(new_password):
-        return jsonify({'success': False, 'message': 'Password must be at least 8 characters with letters and numbers'}), 400
+    if not all([email, code, new_password]):
+        return jsonify({'success': False, 'message': 'All fields are required'}), 400
     
     # Initialize services
     mongo = PyMongo(current_app)
     auth_service = AuthService(mongo.db)
     
     # Reset password
-    result = auth_service.reset_password(token, new_password)
-    
-    if not result['success']:
-        return jsonify(result), 400
-    
+    result = auth_service.reset_password_with_code(email, code, new_password)
     return jsonify(result)
 
 @auth_bp.route('/verify-token', methods=['POST'])
