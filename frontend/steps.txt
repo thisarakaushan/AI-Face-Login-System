@@ -1,0 +1,27 @@
+npx create-next-app@14 . --js --eslint --tailwind --src-dir --app --import-alias "@/*"
+
+cd frontend
+npm install next 
+npx next --version
+npm install next --save
+npm install eslint-config-next --save-dev
+npm cache clean --force
+npm install
+
+cd backend
+pip install -r requirements.txt
+python app.py
+if error: 
+python.exe -m pip install --upgrade pip
+again:
+    pip install -r requirements.txt
+
+if error related to opencv-python
+run:
+    pip uninstall numpy opencv-python -y
+    pip cache purge
+
+then install a compatible NumPy version
+then install OpenCV with specific version
+finally install other requirements: 
+    pip install -r requirements.txt --ignore-installed
